@@ -173,3 +173,6 @@ tsne
 viz
 wandb
 model.ckpt
+test-covae/3zse2rlt/checkpoints/last.ckpt
+test-covae/qoh9kjty/checkpoints/epoch=638-step=150000.ckpt
+test-covae/qoh9kjty/checkpoints/last.ckpt
