@@ -22,6 +22,7 @@ time_scale: 'karras'
 rec_weight_mode: 'linear'
 kl_weight_mode: 'square'
 lambda_denoiser: 1.
+lambda_latent_consistency: 0.
 
 ## covae_simple
 kernel: 've'

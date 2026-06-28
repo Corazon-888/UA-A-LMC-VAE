@@ -82,6 +82,7 @@ def get_model(cfg: DictConfig, pretrained_net=None):
                      rec_weight_mode=cfg.model.rec_weight_mode,
                      kl_weight_mode=cfg.model.kl_weight_mode,
                      lambda_denoiser=cfg.model.lambda_denoiser,
+                     lambda_latent_consistency=cfg.model.get('lambda_latent_consistency', 0.),
                      latent_type=cfg.model.latent_type,
                      latent_shape=list(cfg.model.latent_shape),
                      )

@@ -15,6 +15,7 @@ class CoVAE(CoVAEBase):
                  lambda_denoiser,
                  latent_type,
                  latent_shape,
+                 lambda_latent_consistency=0.,
                  **cm_kwargs
                  ):
         super().__init__(**cm_kwargs)
@@ -22,6 +23,7 @@ class CoVAE(CoVAEBase):
         self.rec_weight_mode = rec_weight_mode
         self.kl_weight_mode = kl_weight_mode
         self.lambda_denoiser = lambda_denoiser
+        self.lambda_latent_consistency = lambda_latent_consistency
         self.latent_type = latent_type
         self.latent_shape = latent_shape
         assert latent_type in ['gaussian', 'categorical']
@@ -165,9 +167,17 @@ class CoVAE(CoVAEBase):
         if (idxs == 0).all():
             # save time when training simple vae
             x_r = x
+            mu_r = None
         else:
             with torch.no_grad():
-                x_r, _, _, _ = self.precond(x, r, noise, labels)
+                x_r, mu_r, _, _ = self.precond(x, r, noise, labels)
+
+        if self.lambda_latent_consistency > 0 and mu_r is not None:
+            latent_mask = (idxs > 0).to(device)
+            latent_consistency_loss = (mu[latent_mask] - mu_r[latent_mask]).flatten(1).square().sum(1).mean()
+            log_dict['latent_consistency_loss'] = latent_consistency_loss.detach()
+        else:
+            latent_consistency_loss = mu.new_zeros(())
 
         if self.loss_mode == 'bce':
             x_r = torch.where(self._append_dims(idxs > 0, dims).to(device), nn.functional.sigmoid(x_r), x)
@@ -212,7 +222,9 @@ class CoVAE(CoVAEBase):
         log_dict['kl_loss'] = kl_loss.detach().reshape(batch_size, -1).sum(1).mean()
         kl_loss = kl_loss.reshape(batch_size, -1).sum(-1) * kl_loss_weights
 
-        return (rec_loss + denoiser_loss + kl_loss).mean() + gan_loss, log_dict, x_t
+        loss = (rec_loss + denoiser_loss + kl_loss).mean() + gan_loss
+        loss = loss + self.lambda_latent_consistency * latent_consistency_loss
+        return loss, log_dict, x_t
 
     @torch.no_grad()
     def sample(self, sample_shape, n_iters, device, class_labels=None, idx=None, temperature=1):

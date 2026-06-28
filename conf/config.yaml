@@ -16,6 +16,7 @@ seed: 42
 extra_name: ''
 reload: False
 run_path: ''
+ckpt_path: ''
 log_model: 'all'
 deterministic: False
 sync_batchnorm: False

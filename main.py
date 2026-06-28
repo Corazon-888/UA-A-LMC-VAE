@@ -19,9 +19,41 @@ from wandb_config import key
 from lightning.pytorch.utilities import rank_zero_only
 from pathlib import Path
 
+
+def restore_model_step(model: LightningConsistencyModel, checkpoint_path: Path) -> None:
+    ckpt = torch.load(checkpoint_path, map_location=torch.device('cpu'), weights_only=False)
+    global_step = ckpt['global_step']
+    if model.cfg.model.use_gan:
+        if global_step < model.cfg.model.gan_warmup_steps:
+            model.step = global_step
+        else:
+            model.step = global_step - (global_step - model.cfg.model.gan_warmup_steps)//2
+    else:
+        model.step = global_step
+
+
 @hydra.main(version_base=None, config_path="conf", config_name="config")
 def main(cfg: DictConfig) -> None:
-    if cfg.reload:
+    checkpoint_path = cfg.get('ckpt_path', '')
+    if cfg.reload and checkpoint_path:
+        raise ValueError('Use either reload=True or ckpt_path, not both.')
+
+    if checkpoint_path:
+        reload = True
+        run_id = Path(cfg.run_path).name if cfg.run_path else None
+        resume = 'must' if run_id else 'allow'
+        checkpoint_path = Path(checkpoint_path).expanduser()
+        if not checkpoint_path.is_file():
+            raise FileNotFoundError(f'Checkpoint not found: {checkpoint_path}')
+        model = LightningConsistencyModel.load_from_checkpoint(checkpoint_path, weights_only=False)
+        restore_model_step(model, checkpoint_path)
+        root_dir = cfg.root_dir
+        data_dir = cfg.dataset.data_dir
+        cfg = model.cfg
+        cfg.root_dir = root_dir
+        cfg.dataset.data_dir = data_dir
+        L.seed_everything(cfg.seed, workers=True)
+    elif cfg.reload:
         reload = True
         #checkpoint_path = f'{cfg.root_dir}/model.ckpt'
         wandb.login(key=key)
@@ -36,18 +68,11 @@ def main(cfg: DictConfig) -> None:
         while True:
             # ugly hack to make sure model reloading works with multi gpu
             try:
-                model = LightningConsistencyModel.load_from_checkpoint(checkpoint_path)
+                model = LightningConsistencyModel.load_from_checkpoint(checkpoint_path, weights_only=False)
                 break
             except:
                 time.sleep(30)
-        ckpt = torch.load(checkpoint_path, map_location=torch.device('cpu'), weights_only=False)
-        if model.cfg.model.use_gan:
-            if ckpt['global_step'] < model.cfg.model.gan_warmup_steps:
-                model.step = ckpt['global_step']
-            else:
-                model.step = ckpt['global_step'] - (ckpt['global_step'] - model.cfg.model.gan_warmup_steps)//2
-        else:
-            model.step = ckpt['global_step']
+        restore_model_step(model, checkpoint_path)
         root_dir = cfg.root_dir
         data_dir = cfg.dataset.data_dir
         cfg = model.cfg
@@ -113,7 +138,7 @@ def main(cfg: DictConfig) -> None:
                         )
     if reload:
         dm.prepare_data()
-        trainer.fit(model=model, datamodule=dm, ckpt_path=checkpoint_path)
+        trainer.fit(model=model, datamodule=dm, ckpt_path=checkpoint_path, weights_only=False)
     else:
         trainer.fit(model=model, datamodule=dm)
     time.sleep(10)
