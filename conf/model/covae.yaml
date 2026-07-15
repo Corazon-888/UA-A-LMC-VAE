@@ -22,7 +22,14 @@ time_scale: 'karras'
 rec_weight_mode: 'linear'
 kl_weight_mode: 'square'
 lambda_denoiser: 1.
-lambda_latent_consistency: 0.
+lambda_latent_consistency: 0.1
+ua_lmc_kappa: 1.0
+ua_lmc_gamma: 2.0
+ua_lmc_eta: 0.5
+ua_lmc_umin: 0.5
+ua_lmc_umax: 2.0
+ua_lmc_eps: 1e-6
+ua_lmc_warmup_frac: 0.1
 
 ## covae_simple
 kernel: 've'

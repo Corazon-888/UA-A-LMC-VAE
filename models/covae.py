@@ -15,7 +15,14 @@ class CoVAE(CoVAEBase):
                  lambda_denoiser,
                  latent_type,
                  latent_shape,
-                 lambda_latent_consistency=0.,
+                 lambda_latent_consistency=0.1,
+                 ua_lmc_kappa=1.,
+                 ua_lmc_gamma=2.,
+                 ua_lmc_eta=0.5,
+                 ua_lmc_umin=0.5,
+                 ua_lmc_umax=2.,
+                 ua_lmc_eps=1e-6,
+                 ua_lmc_warmup_frac=0.1,
                  **cm_kwargs
                  ):
         super().__init__(**cm_kwargs)
@@ -24,9 +31,18 @@ class CoVAE(CoVAEBase):
         self.kl_weight_mode = kl_weight_mode
         self.lambda_denoiser = lambda_denoiser
         self.lambda_latent_consistency = lambda_latent_consistency
+        self.ua_lmc_kappa = ua_lmc_kappa
+        self.ua_lmc_gamma = ua_lmc_gamma
+        self.ua_lmc_eta = ua_lmc_eta
+        self.ua_lmc_umin = ua_lmc_umin
+        self.ua_lmc_umax = ua_lmc_umax
+        self.ua_lmc_eps = ua_lmc_eps
+        self.ua_lmc_warmup_frac = ua_lmc_warmup_frac
         self.latent_type = latent_type
         self.latent_shape = latent_shape
         assert latent_type in ['gaussian', 'categorical']
+        if lambda_latent_consistency > 0 and latent_type != 'gaussian':
+            raise NotImplementedError('UA-A-LMC requires gaussian posterior uncertainty.')
         if latent_type == 'categorical':
             assert self.num_elements(self.latent_shape) == self.num_elements(self.noise_shape)
 
@@ -103,6 +119,29 @@ class CoVAE(CoVAEBase):
         elif mode == 'ones':
             return torch.ones_like(t)
 
+    def _get_latent_consistency_weight(self, step):
+        if self.ua_lmc_warmup_frac <= 0:
+            return self.lambda_latent_consistency
+
+        warmup_steps = max(int(self.total_training_steps * self.ua_lmc_warmup_frac), 1)
+        warmup = min((step + 1) / warmup_steps, 1.)
+        return self.lambda_latent_consistency * warmup
+
+    def _get_ua_lmc_loss(self, mu_h, mu_l, std_h, std_l, t_h, t_l):
+        snr_h = 1 / (t_h.square() + self.ua_lmc_eps)
+        snr_l = 1 / (t_l.square() + self.ua_lmc_eps)
+        w_conf = (snr_h / (snr_h + self.ua_lmc_kappa)).pow(self.ua_lmc_gamma)
+        w_gap = torch.exp(-self.ua_lmc_eta * (torch.log(snr_l) - torch.log(snr_h)).abs())
+        w_noise = self._append_dims(w_conf * w_gap, mu_h.ndim)
+
+        var_h = std_h.square()
+        var_l = std_l.square()
+        w_unc = 1 / (var_l + var_h + self.ua_lmc_eps)
+        w_unc = w_unc.clamp(min=self.ua_lmc_umin, max=self.ua_lmc_umax).detach()
+        w_unc = w_unc / (w_unc.mean() + self.ua_lmc_eps)
+
+        return (w_noise * w_unc * (mu_h - mu_l).square()).mean()
+
     def _decode_fn(self, z, t, emb):
         x = self.model.decoder(z, emb)
         if self.denoiser_loss_mode:
@@ -168,13 +207,21 @@ class CoVAE(CoVAEBase):
             # save time when training simple vae
             x_r = x
             mu_r = None
+            std_r = None
         else:
             with torch.no_grad():
-                x_r, mu_r, _, _ = self.precond(x, r, noise, labels)
+                x_r, mu_r, std_r, _ = self.precond(x, r, noise, labels)
 
         if self.lambda_latent_consistency > 0 and mu_r is not None:
             latent_mask = (idxs > 0).to(device)
-            latent_consistency_loss = (mu[latent_mask] - mu_r[latent_mask]).flatten(1).square().sum(1).mean()
+            latent_consistency_loss = self._get_ua_lmc_loss(
+                mu[latent_mask],
+                mu_r[latent_mask],
+                std[latent_mask],
+                std_r[latent_mask],
+                t[latent_mask],
+                r[latent_mask],
+            )
             log_dict['latent_consistency_loss'] = latent_consistency_loss.detach()
         else:
             latent_consistency_loss = mu.new_zeros(())
@@ -223,7 +270,7 @@ class CoVAE(CoVAEBase):
         kl_loss = kl_loss.reshape(batch_size, -1).sum(-1) * kl_loss_weights
 
         loss = (rec_loss + denoiser_loss + kl_loss).mean() + gan_loss
-        loss = loss + self.lambda_latent_consistency * latent_consistency_loss
+        loss = loss + self._get_latent_consistency_weight(step) * latent_consistency_loss
         return loss, log_dict, x_t
 
     @torch.no_grad()
