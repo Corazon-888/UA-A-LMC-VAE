@@ -1,6 +1,14 @@
 from omegaconf import OmegaConf, DictConfig
 
 
+def _get_required_model_field(cfg: DictConfig, field: str):
+    if field not in cfg.model:
+        raise KeyError(f'Missing required run-name config field: model.{field}')
+    if OmegaConf.is_missing(cfg.model, field):
+        raise ValueError(f'Missing required run-name config value: model.{field}')
+    return cfg.model[field]
+
+
 def get_run_name(cfg: DictConfig):
     name = f'{cfg.dataset.name}_{cfg.model.name}'
     if cfg.model.name == 'covae':
@@ -36,4 +44,11 @@ def get_run_name(cfg: DictConfig):
                 name += f'_nw_{cfg.model.norm_weight}'
             if cfg.model.denoiser_loss_mode:
                 name += f'_denl'
+    lambda_latent_consistency = _get_required_model_field(cfg, 'lambda_latent_consistency')
+    ua_lmc_kappa = _get_required_model_field(cfg, 'ua_lmc_kappa')
+    ua_lmc_gamma = _get_required_model_field(cfg, 'ua_lmc_gamma')
+    ua_lmc_eta = _get_required_model_field(cfg, 'ua_lmc_eta')
+    name += f'_lc_{lambda_latent_consistency}_kappa_{ua_lmc_kappa}_gamma_{ua_lmc_gamma}_eta_{ua_lmc_eta}'
+    if cfg.model.get('ua_lmc_disable_dynamic_weight', False):
+        name += '_dynamic_off'
     return name

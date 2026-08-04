@@ -43,6 +43,13 @@ def get_callbacks(cfg: DictConfig):
                                          save_on_train_epoch_end=False,
                                          enable_version_counter=False,
                                          ))
+    else:
+        callbacks.append(ModelCheckpoint(every_n_train_steps=cfg.log_frequency,
+                                         save_top_k=0,
+                                         save_last=True,
+                                         save_on_train_epoch_end=False,
+                                         enable_version_counter=False,
+                                         ))
 
     if cfg.log_rec:
         callbacks.append(DiagnosticCallback(every_n_iterations=cfg.log_frequency))

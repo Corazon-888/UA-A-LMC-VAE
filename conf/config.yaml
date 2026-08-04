@@ -17,7 +17,7 @@ extra_name: ''
 reload: False
 run_path: ''
 ckpt_path: ''
-log_model: 'all'
+log_model: false
 deterministic: False
 sync_batchnorm: False
 

@@ -48,6 +48,12 @@ def get_neural_net(cfg: DictConfig, pretrained_net):
 def get_model(cfg: DictConfig, pretrained_net=None):
     net = get_neural_net(cfg, pretrained_net)
 
+    if cfg.model.name == 'covae' and cfg.model.get('ua_lmc_disable_dynamic_weight', False):
+        cfg.model.ua_lmc_kappa = 0
+        cfg.model.ua_lmc_eta = 0
+        cfg.model.ua_lmc_umin = 1
+        cfg.model.ua_lmc_umax = 1
+
     latent_size = cfg.dataset.img_resolution // (2 ** (len(cfg.network.channel_mult_enc) - 1))
     if isinstance(cfg.network.final_dim, int):
         noise_shape = [cfg.network.final_dim]
@@ -83,6 +89,7 @@ def get_model(cfg: DictConfig, pretrained_net=None):
                      kl_weight_mode=cfg.model.kl_weight_mode,
                      lambda_denoiser=cfg.model.lambda_denoiser,
                      lambda_latent_consistency=cfg.model.get('lambda_latent_consistency', 0.1),
+                     ua_lmc_disable_dynamic_weight=cfg.model.get('ua_lmc_disable_dynamic_weight', False),
                      ua_lmc_kappa=cfg.model.get('ua_lmc_kappa', 1.),
                      ua_lmc_gamma=cfg.model.get('ua_lmc_gamma', 2.),
                      ua_lmc_eta=cfg.model.get('ua_lmc_eta', 0.5),

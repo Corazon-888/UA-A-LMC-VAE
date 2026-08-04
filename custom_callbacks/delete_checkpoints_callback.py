@@ -1,7 +1,12 @@
 
+import logging
+
 import lightning as L
-import torch
 import wandb
+from wandb.sdk.lib.service.service_connection import WandbApiFailedError
+
+
+logger = logging.getLogger(__name__)
 
 
 class DeleteCheckpointsCallback(L.Callback):
@@ -10,13 +15,22 @@ class DeleteCheckpointsCallback(L.Callback):
         super().__init__()
         self.every_n_iterations = every_n_iterations  # Only save those images every N epochs (otherwise tensorboard gets quite large)
         self.path = path
-        self.run = wandb.Api().run(self.path)
 
     def _delete_artifacts_without_alias(self):
-        for artifact_version in self.run.logged_artifacts():
-            # Keep only artifacts with alias "best" or "latest"
-            if len(artifact_version.aliases) == 0:
-                artifact_version.delete()
+        try:
+            run = wandb.Api().run(self.path)
+            for artifact_version in run.logged_artifacts():
+                # Keep only artifacts with alias "best" or "latest"
+                if len(artifact_version.aliases) == 0:
+                    artifact_version.delete()
+        except WandbApiFailedError as error:
+            logger.warning("Skipping W&B artifact cleanup after API failure: %s", error)
+        except Exception as error:
+            logger.warning(
+                "Skipping W&B artifact cleanup after transient W&B/network failure (%s): %s",
+                type(error).__name__,
+                error,
+            )
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         if trainer.global_rank == 0:

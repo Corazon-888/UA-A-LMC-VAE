@@ -16,6 +16,7 @@ class CoVAE(CoVAEBase):
                  latent_type,
                  latent_shape,
                  lambda_latent_consistency=0.1,
+                 ua_lmc_disable_dynamic_weight=False,
                  ua_lmc_kappa=1.,
                  ua_lmc_gamma=2.,
                  ua_lmc_eta=0.5,
@@ -31,6 +32,7 @@ class CoVAE(CoVAEBase):
         self.kl_weight_mode = kl_weight_mode
         self.lambda_denoiser = lambda_denoiser
         self.lambda_latent_consistency = lambda_latent_consistency
+        self.ua_lmc_disable_dynamic_weight = ua_lmc_disable_dynamic_weight
         self.ua_lmc_kappa = ua_lmc_kappa
         self.ua_lmc_gamma = ua_lmc_gamma
         self.ua_lmc_eta = ua_lmc_eta
@@ -128,6 +130,9 @@ class CoVAE(CoVAEBase):
         return self.lambda_latent_consistency * warmup
 
     def _get_ua_lmc_loss(self, mu_h, mu_l, std_h, std_l, t_h, t_l):
+        if self.ua_lmc_disable_dynamic_weight:
+            return ((mu_h - mu_l).square()).mean()
+
         snr_h = 1 / (t_h.square() + self.ua_lmc_eps)
         snr_l = 1 / (t_l.square() + self.ua_lmc_eps)
         w_conf = (snr_h / (snr_h + self.ua_lmc_kappa)).pow(self.ua_lmc_gamma)

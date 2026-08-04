@@ -23,6 +23,7 @@ rec_weight_mode: 'linear'
 kl_weight_mode: 'square'
 lambda_denoiser: 1.
 lambda_latent_consistency: 0.1
+ua_lmc_disable_dynamic_weight: false
 ua_lmc_kappa: 1.0
 ua_lmc_gamma: 2.0
 ua_lmc_eta: 0.5

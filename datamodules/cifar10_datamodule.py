@@ -38,7 +38,14 @@ class CIFAR10DataModule(L.LightningDataModule):
             self.predict = CIFAR10(self.data_dir, train=False, transform=self.transform)
 
     def train_dataloader(self, shuffle=True):
-        return ResumableDataLoader(self.train, batch_size=self.batch_size, shuffle=shuffle, num_workers=self.num_workers)
+        return ResumableDataLoader(
+            self.train,
+            batch_size=self.batch_size,
+            shuffle=shuffle,
+            num_workers=self.num_workers,
+            pin_memory=True,
+            persistent_workers=self.num_workers > 0,
+        )
 
     def fid_dataloader(self):
         return DataLoader(self.fid, batch_size=500, shuffle=False, num_workers=self.num_workers)
